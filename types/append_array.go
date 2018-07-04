@@ -88,6 +88,7 @@ func appendSliceString(b []byte, ss []string, quote int) []byte {
 
 	if quote == 1 {
 		b = append(b, '\'')
+		b = append(b, "::string[]"...)
 	}
 
 	return b
@@ -120,6 +121,7 @@ func appendSliceInt(b []byte, ints []int, quote int) []byte {
 
 	if quote == 1 {
 		b = append(b, '\'')
+		b = append(b, "::int[]"...)
 	}
 
 	return b
@@ -152,6 +154,7 @@ func appendSliceInt64(b []byte, ints []int64, quote int) []byte {
 
 	if quote == 1 {
 		b = append(b, '\'')
+		b = append(b, "::int[]"...)
 	}
 
 	return b
@@ -184,6 +187,7 @@ func appendSliceFloat64(b []byte, floats []float64, quote int) []byte {
 
 	if quote == 1 {
 		b = append(b, '\'')
+		b = append(b, "::float[]"...)
 	}
 
 	return b
