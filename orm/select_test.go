@@ -1,12 +1,18 @@
 package orm
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 type User struct {
 	tableName struct{} `sql:"user"`
+}
+
+type User2 struct {
+	tableName struct{} `sql:"select:user,alias:user"`
 }
 
 type SelectModel struct {
@@ -29,6 +35,14 @@ type HasManyModel struct {
 var _ = Describe("Select", func() {
 	It("works with User model", func() {
 		q := NewQuery(nil, &User{})
+
+		b, err := selectQuery{q: q}.AppendQuery(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(Equal(`SELECT  FROM "user" AS "user"`))
+	})
+
+	It("works with User model", func() {
+		q := NewQuery(nil, &User2{})
 
 		b, err := selectQuery{q: q}.AppendQuery(nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -61,6 +75,18 @@ var _ = Describe("Select", func() {
 		Expect(string(b)).To(Equal(`SELECT "has_one"."id" AS "has_one__id" FROM "select_models" AS "select_model" LEFT JOIN "has_one_models" AS "has_one" ON "has_one"."id" = "select_model"."has_one_id"`))
 	})
 
+	It("adds JoinOn", func() {
+		q := NewQuery(nil, &SelectModel{}).
+			Relation("HasOne", func(q *Query) (*Query, error) {
+				q = q.JoinOn("1 = 2")
+				return q, nil
+			})
+
+		b, err := selectQuery{q: q}.AppendQuery(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(Equal(`SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id", "has_one"."id" AS "has_one__id" FROM "select_models" AS "select_model" LEFT JOIN "has_one_models" AS "has_one" ON "has_one"."id" = "select_model"."has_one_id" AND (1 = 2)`))
+	})
+
 	It("omits columns in join query", func() {
 		q := NewQuery(nil, &SelectModel{}).Relation("HasOne._")
 
@@ -80,7 +106,7 @@ var _ = Describe("Select", func() {
 	It("specifies all columns for has many", func() {
 		q := NewQuery(nil, &SelectModel{Id: 1}).Relation("HasMany")
 
-		q, err := q.model.GetJoin("HasMany").manyQuery(nil)
+		q, err := q.model.GetJoin("HasMany").manyQuery(q.New())
 		Expect(err).NotTo(HaveOccurred())
 
 		b, err := selectQuery{q: q}.AppendQuery(nil)
@@ -95,7 +121,7 @@ var _ = Describe("Select", func() {
 				return q, nil
 			})
 
-		q, err := q.model.GetJoin("HasMany").manyQuery(nil)
+		q, err := q.model.GetJoin("HasMany").manyQuery(q.New())
 		Expect(err).NotTo(HaveOccurred())
 
 		b, err := selectQuery{q: q}.AppendQuery(nil)
@@ -177,6 +203,15 @@ var _ = Describe("Select", func() {
 		b, err := selectQuery{q: q}.AppendQuery(nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(b)).To(Equal(`SELECT * WHERE (TRUE)`))
+	})
+
+	It("expands ?TableAlias in Where with structs", func() {
+		t := time.Date(2006, 2, 3, 10, 30, 35, 987654321, time.UTC)
+		q := NewQuery(nil, &SelectModel{}).Column("id").Where("?TableAlias.name > ?", t)
+
+		b, err := selectQuery{q: q}.AppendQuery(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(Equal(`SELECT "id" FROM "select_models" AS "select_model" WHERE ("select_model".name > '2006-02-03 10:30:35.987654321+00:00:00')`))
 	})
 })
 
@@ -297,5 +332,20 @@ var _ = Describe("Select Order", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(b)).To(Equal(`SELECT * ORDER BY ` + test.query))
 		}
+	})
+})
+
+type SoftDeleteModel struct {
+	Id        int
+	DeletedAt time.Time `pg:",soft_delete"`
+}
+
+var _ = Describe("SoftDeleteModel", func() {
+	It("works with User model", func() {
+		q := NewQuery(nil, &SoftDeleteModel{})
+
+		b, err := selectQuery{q: q}.AppendQuery(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(Equal(`SELECT "soft_delete_model"."id", "soft_delete_model"."deleted_at" FROM "soft_delete_models" AS "soft_delete_model" WHERE "soft_delete_model".deleted_at IS NULL`))
 	})
 })

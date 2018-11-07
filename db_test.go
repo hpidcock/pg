@@ -38,9 +38,9 @@ func pgOptions() *pg.Options {
 		WriteTimeout: 10 * time.Second,
 
 		PoolSize:           10,
+		MaxConnAge:         10 * time.Second,
 		PoolTimeout:        30 * time.Second,
 		IdleTimeout:        10 * time.Second,
-		MaxAge:             10 * time.Second,
 		IdleCheckFrequency: 100 * time.Millisecond,
 	}
 }
@@ -171,6 +171,18 @@ var _ = Describe("DB", func() {
 			Expect(err).To(Equal(pg.ErrNoRows))
 		})
 	})
+
+	Describe("Prepare", func() {
+		It("returns an error when query can't be prepared", func() {
+			for i := 0; i < 3; i++ {
+				_, err := db.Prepare("totally invalid sql")
+				Expect(err).To(MatchError(`ERROR #42601 syntax error at or near "totally"`))
+
+				_, err = db.Exec("SELECT 1")
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	})
 })
 
 var _ = Describe("Time", func() {
@@ -238,7 +250,7 @@ var _ = Describe("Time", func() {
 
 var _ = Describe("array model", func() {
 	type value struct {
-		Values []int16 `pg:",array"`
+		Values []int16 `sql:",array"`
 	}
 
 	var db *pg.DB
@@ -430,7 +442,7 @@ var _ = Describe("CopyFrom/CopyTo", func() {
 		Expect(st.Misses).To(Equal(uint32(1)))
 		Expect(st.Timeouts).To(Equal(uint32(0)))
 		Expect(st.TotalConns).To(Equal(uint32(1)))
-		Expect(st.FreeConns).To(Equal(uint32(1)))
+		Expect(st.IdleConns).To(Equal(uint32(1)))
 
 		var count int
 		_, err = db.QueryOne(pg.Scan(&count), "SELECT count(*) FROM copy_dst")
@@ -441,7 +453,7 @@ var _ = Describe("CopyFrom/CopyTo", func() {
 	It("copies corrupted data to a table", func() {
 		buf := bytes.NewBufferString("corrupted,data\nrow,two\r\nrow three")
 		res, err := db.CopyFrom(buf, "COPY copy_dst FROM STDIN WITH FORMAT csv")
-		Expect(err).To(MatchError(`ERROR #42601 syntax error at or near "FORMAT" (addr="127.0.0.1:5432")`))
+		Expect(err).To(MatchError(`ERROR #42601 syntax error at or near "FORMAT"`))
 		Expect(res).To(BeNil())
 
 		st := db.Pool().Stats()
@@ -449,7 +461,7 @@ var _ = Describe("CopyFrom/CopyTo", func() {
 		Expect(st.Misses).To(Equal(uint32(1)))
 		Expect(st.Timeouts).To(Equal(uint32(0)))
 		Expect(st.TotalConns).To(Equal(uint32(1)))
-		Expect(st.FreeConns).To(Equal(uint32(1)))
+		Expect(st.IdleConns).To(Equal(uint32(1)))
 
 		var count int
 		_, err = db.QueryOne(pg.Scan(&count), "SELECT count(*) FROM copy_dst")
@@ -676,7 +688,7 @@ var _ = Describe("DB.Update", func() {
 		type Test struct{}
 		var test Test
 		err := db.Update(&test)
-		Expect(err).To(MatchError(`model=Test does not have primary keys`))
+		Expect(err).To(MatchError(`pg: model=Test does not have primary keys`))
 	})
 })
 
@@ -700,7 +712,7 @@ var _ = Describe("DB.Delete", func() {
 		type Test struct{}
 		var test Test
 		err := db.Delete(&test)
-		Expect(err).To(MatchError(`model=Test does not have primary keys`))
+		Expect(err).To(MatchError(`pg: model=Test does not have primary keys`))
 	})
 })
 
@@ -809,10 +821,10 @@ func (b *Book) BeforeInsert(db orm.DB) error {
 }
 
 // BookWithCommentCount is like Book model, but has additional CommentCount
-// field that is used to select data into it. The use of `pg:",override"` tag
-// is essential here and it overrides internal model properties such as table name.
+// field that is used to select data into it. The use of `pg:",inherit"` tag
+// is essential here so it inherits internal model properties such as table name.
 type BookWithCommentCount struct {
-	Book `pg:",override"`
+	Book `pg:",inherit"`
 
 	CommentCount int
 }
@@ -1582,7 +1594,7 @@ var _ = Describe("ORM", func() {
 			Expect(err).To(MatchError("pg: can't bulk-update empty slice []pg_test.Book"))
 		})
 
-		It("updates books", func() {
+		It("updates books using Set", func() {
 			var books []Book
 			err := db.Model(&books).Order("id").Select()
 			Expect(err).NotTo(HaveOccurred())
@@ -1602,7 +1614,8 @@ var _ = Describe("ORM", func() {
 				Expect(books[i].Title).To(Equal(fmt.Sprintf("censored %d", i)))
 			}
 		})
-		It("updates books using Set", func() {
+
+		It("updates books using Set expression", func() {
 			books := []Book{{
 				Id:    100,
 				Title: " suffix",
@@ -1628,6 +1641,27 @@ var _ = Describe("ORM", func() {
 				Id:    102,
 				Title: "book 3",
 			}}))
+		})
+
+		It("updates books using Column", func() {
+			var books []Book
+			err := db.Model(&books).Order("id").Select()
+			Expect(err).NotTo(HaveOccurred())
+
+			for i := range books {
+				books[i].Title = fmt.Sprintf("censored %d", i)
+			}
+
+			_, err = db.Model(&books).Column("title").Update()
+			Expect(err).NotTo(HaveOccurred())
+
+			books = nil
+			err = db.Model(&books).Order("id").Select()
+			Expect(err).NotTo(HaveOccurred())
+
+			for i := range books {
+				Expect(books[i].Title).To(Equal(fmt.Sprintf("censored %d", i)))
+			}
 		})
 	})
 
@@ -1744,7 +1778,7 @@ var _ = Describe("ORM", func() {
 
 		var num int
 		_, err = db.Model(&Book{}).QueryOne(pg.Scan(&num), "SELECT 1 FROM ?TableName")
-		Expect(err).To(MatchError(`ERROR #42P01 relation "books" does not exist (addr="127.0.0.1:5432")`))
+		Expect(err).To(MatchError(`ERROR #42P01 relation "books" does not exist`))
 	})
 
 	It("does not create zero model for null relation", func() {
@@ -1850,6 +1884,107 @@ var _ = Describe("ORM", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(count).To(Equal(3))
 			Expect(books).To(HaveLen(0))
+		})
+	})
+
+	Describe("Exists", func() {
+		It("returns true for existing rows", func() {
+			var books []Book
+			exists, err := db.Model(&books).Exists()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(Equal(true))
+			Expect(books).To(HaveLen(0))
+		})
+
+		It("returns false otherwise", func() {
+			var books []Book
+			exists, err := db.Model(&books).Where("id = 0").Exists()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(Equal(false))
+			Expect(books).To(HaveLen(0))
+		})
+	})
+})
+
+type SoftDeleteModel struct {
+	Id        int
+	DeletedAt time.Time `pg:",soft_delete"`
+}
+
+var _testDB *pg.DB
+
+func testDB() *pg.DB {
+	if _testDB == nil {
+		_testDB = pg.Connect(pgOptions())
+	}
+	return _testDB
+}
+
+var _ = Describe("soft deletes", func() {
+	var db *pg.DB
+
+	BeforeEach(func() {
+		db = testDB()
+
+		err := db.CreateTable((*SoftDeleteModel)(nil), &orm.CreateTableOptions{
+			Temp: true,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		model := &SoftDeleteModel{
+			Id: 1,
+		}
+		err = db.Insert(model)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = db.Delete(model)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		err := db.DropTable((*SoftDeleteModel)(nil), nil)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("soft deletes the model", func() {
+		model := new(SoftDeleteModel)
+		err := db.Model(model).Select()
+		Expect(err).To(Equal(pg.ErrNoRows))
+
+		n, err := db.Model((*SoftDeleteModel)(nil)).Count()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(Equal(0))
+	})
+
+	It("Deleted allows to select the model", func() {
+		model := new(SoftDeleteModel)
+		err := db.Model(model).Deleted().Select()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(model.Id).To(Equal(1))
+		Expect(model.DeletedAt).To(BeTemporally("~", time.Now()))
+
+		n, err := db.Model((*SoftDeleteModel)(nil)).Deleted().Count()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(Equal(1))
+	})
+
+	Describe("ForceDelete", func() {
+		BeforeEach(func() {
+			model := &SoftDeleteModel{
+				Id: 1,
+			}
+			err := db.ForceDelete(model)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("deletes the model", func() {
+			model := new(SoftDeleteModel)
+			err := db.Model(model).Deleted().Select()
+			Expect(err).To(Equal(pg.ErrNoRows))
+
+			n, err := db.Model((*SoftDeleteModel)(nil)).Deleted().Count()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(n).To(Equal(0))
 		})
 	})
 })

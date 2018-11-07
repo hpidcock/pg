@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-pg/pg"
 	"github.com/go-pg/pg/orm"
+	"github.com/go-pg/pg/types"
 )
 
 func benchmarkDB() *pg.DB {
@@ -409,8 +410,12 @@ type OptRecord struct {
 
 var _ orm.ColumnScanner = (*OptRecord)(nil)
 
-func (r *OptRecord) ScanColumn(colIdx int, colName string, b []byte) error {
-	var err error
+func (r *OptRecord) ScanColumn(colIdx int, colName string, rd types.Reader, n int) error {
+	b, err := rd.ReadN(n)
+	if err != nil {
+		return err
+	}
+
 	switch colName {
 	case "num1":
 		r.Num1, err = strconv.ParseInt(string(b), 10, 64)
@@ -434,16 +439,18 @@ type OptRecords struct {
 	C []OptRecord
 }
 
+var _ orm.HooklessModel = (*OptRecords)(nil)
+
+func (rs *OptRecords) Init() error {
+	return nil
+}
+
 func (rs *OptRecords) NewModel() orm.ColumnScanner {
 	rs.C = append(rs.C, OptRecord{})
 	return &rs.C[len(rs.C)-1]
 }
 
 func (OptRecords) AddModel(_ orm.ColumnScanner) error {
-	return nil
-}
-
-func (OptRecords) AfterSelect(_ orm.DB) error {
 	return nil
 }
 
@@ -528,7 +535,7 @@ func _seedDB() error {
 		for j := 1; j <= 10; j++ {
 			err = db.Insert(&BookGenre{
 				BookId:  i,
-				GenreId: rand.Intn(99) + 1,
+				GenreId: j,
 			})
 			if err != nil {
 				return err

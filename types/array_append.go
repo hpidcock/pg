@@ -18,8 +18,17 @@ var float64Type = reflect.TypeOf((*float64)(nil)).Elem()
 var sliceFloat64Type = reflect.TypeOf([]float64(nil))
 
 func ArrayAppender(typ reflect.Type) AppenderFunc {
-	elemType := typ.Elem()
+	kind := typ.Kind()
+	if kind == reflect.Ptr {
+		typ = typ.Elem()
+		kind = typ.Kind()
+	}
 
+	if kind != reflect.Slice {
+		return nil
+	}
+
+	elemType := typ.Elem()
 	switch elemType {
 	case stringType:
 		return appendSliceStringValue
@@ -176,7 +185,7 @@ func appendSliceFloat64(b []byte, floats []float64, quote int) []byte {
 
 	b = append(b, '{')
 	for _, n := range floats {
-		b = appendFloat(b, n)
+		b = appendFloat(b, n, 2)
 		b = append(b, ',')
 	}
 	if len(floats) > 0 {

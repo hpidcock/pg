@@ -25,14 +25,14 @@ type HooklessModel interface {
 
 	// AddModel adds ColumnScanner created by NewModel to the Collection.
 	AddModel(ColumnScanner) error
-
-	ColumnScanner
 }
 
 type Model interface {
 	HooklessModel
 
 	AfterQuery(DB) error
+
+	BeforeSelectQuery(DB, *Query) (*Query, error)
 	AfterSelect(DB) error
 
 	BeforeInsert(DB) error
@@ -56,7 +56,7 @@ func NewModel(values ...interface{}) (Model, error) {
 		return v0, nil
 	case HooklessModel:
 		return newModelWithHookStubs(v0), nil
-	case sql.Scanner:
+	case types.ValueScanner, sql.Scanner:
 		return Scan(v0), nil
 	}
 

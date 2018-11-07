@@ -221,6 +221,34 @@ func ExampleDB_Insert_selectOrInsert() {
 	// Output: true Author<ID=2 Name="R. Scott Bakker">
 }
 
+func ExampleDB_Insert_dynamicTableName() {
+	type NamelessModel struct {
+		tableName struct{} `sql:"_"` // "_" means no name
+		Id        int
+	}
+
+	db := modelDB()
+
+	err := db.Model((*NamelessModel)(nil)).Table("dynamic_name").CreateTable(nil)
+	panicIf(err)
+
+	row123 := &NamelessModel{
+		Id: 123,
+	}
+	_, err = db.Model(row123).Table("dynamic_name").Insert()
+	panicIf(err)
+
+	row := new(NamelessModel)
+	err = db.Model(row).Table("dynamic_name").First()
+	panicIf(err)
+	fmt.Println("id is", row.Id)
+
+	err = db.Model((*NamelessModel)(nil)).Table("dynamic_name").DropTable(nil)
+	panicIf(err)
+
+	// Output: id is 123
+}
+
 func ExampleDB_Select() {
 	db := modelDB()
 
@@ -474,6 +502,19 @@ func ExampleDB_Model_selectAndCount() {
 	fmt.Println(books)
 	// Output: 3
 	// [Book<Id=1 Title="book 1"> Book<Id=2 Title="book 2">]
+}
+
+func ExampleDB_Model_exists() {
+	db := modelDB()
+
+	var books []Book
+	exists, err := db.Model(&books).Where("author_id = ?", 1).Exists()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(exists)
+	// Output: true
 }
 
 func ExampleDB_Model_nullEmptyValue() {

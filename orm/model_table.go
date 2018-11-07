@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+
+	"github.com/go-pg/pg/types"
 )
 
 type tableModel interface {
@@ -13,7 +15,7 @@ type tableModel interface {
 	Relation() *Relation
 	AppendParam([]byte, QueryFormatter, string) ([]byte, bool)
 
-	Join(string, func(*Query) (*Query, error)) (bool, *join)
+	Join(string, func(*Query) (*Query, error)) *join
 	GetJoin(string) *join
 	GetJoins() []join
 	AddJoin(join) *join
@@ -25,7 +27,8 @@ type tableModel interface {
 	Kind() reflect.Kind
 	Value() reflect.Value
 
-	scanColumn(int, string, []byte) (bool, error)
+	setDeletedAt()
+	scanColumn(int, string, types.Reader, int) (bool, error)
 }
 
 func newTableModel(value interface{}) (tableModel, error) {

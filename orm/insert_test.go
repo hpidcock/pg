@@ -25,8 +25,8 @@ type EmbeddedInsertTest struct {
 	Field2 int
 }
 
-type OverrideInsertTest struct {
-	EmbeddingTest `pg:",override"`
+type InheritInsertTest struct {
+	EmbeddingTest `pg:",inherit"`
 	Field2        int
 }
 
@@ -123,8 +123,8 @@ var _ = Describe("Insert", func() {
 		Expect(string(b)).To(Equal(`INSERT INTO my_name ("id", "field", "field2") VALUES (DEFAULT, DEFAULT, DEFAULT) RETURNING "id", "field", "field2"`))
 	})
 
-	It("overrides table name with embedded struct", func() {
-		q := NewQuery(nil, &OverrideInsertTest{})
+	It("inherits table name from embedded struct", func() {
+		q := NewQuery(nil, &InheritInsertTest{})
 
 		b, err := (&insertQuery{q: q}).AppendQuery(nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -185,5 +185,31 @@ var _ = Describe("Insert", func() {
 
 		_, err := (&insertQuery{q: q}).AppendQuery(nil)
 		Expect(err).To(MatchError("pg: can't bulk-insert empty slice []orm.InsertTest"))
+	})
+
+	It("supports notnull and default", func() {
+		type Model struct {
+			Id   int
+			Bool bool `sql:",notnull,default:_"`
+		}
+
+		q := NewQuery(nil, &Model{})
+
+		b, err := (&insertQuery{q: q}).AppendQuery(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(Equal(`INSERT INTO "models" ("id", "bool") VALUES (DEFAULT, DEFAULT) RETURNING "id", "bool"`))
+	})
+
+	It("support models without a name", func() {
+		type Model struct {
+			tableName struct{} `sql:"_"`
+			Id        int
+		}
+
+		q := NewQuery(nil, &Model{}).Table("dynamic_name")
+
+		b, err := (&insertQuery{q: q}).AppendQuery(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(Equal(`INSERT INTO "dynamic_name" ("id") VALUES (DEFAULT) RETURNING "id"`))
 	})
 })

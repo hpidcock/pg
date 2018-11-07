@@ -66,12 +66,11 @@ func (f *Field) Value(strct reflect.Value) reflect.Value {
 }
 
 func (f *Field) IsZero(strct reflect.Value) bool {
-	fv := f.Value(strct)
-	return f.isZero(fv)
+	return f.isZero(f.Value(strct))
 }
 
-func (f *Field) OmitZero(strct reflect.Value) bool {
-	return (f.Default != "" || !f.HasFlag(NotNullFlag)) && f.isZero(f.Value(strct))
+func (f *Field) OmitZero() bool {
+	return !f.HasFlag(NotNullFlag)
 }
 
 func (f *Field) AppendValue(b []byte, strct reflect.Value, quote int) []byte {
@@ -82,9 +81,9 @@ func (f *Field) AppendValue(b []byte, strct reflect.Value, quote int) []byte {
 	return f.append(b, fv, quote)
 }
 
-func (f *Field) ScanValue(strct reflect.Value, b []byte) error {
+func (f *Field) ScanValue(strct reflect.Value, rd types.Reader, n int) error {
 	fv := fieldByIndex(strct, f.Index)
-	return f.scan(fv, b)
+	return f.scan(fv, rd, n)
 }
 
 type Method struct {

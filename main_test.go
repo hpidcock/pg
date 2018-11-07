@@ -6,7 +6,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -190,7 +189,7 @@ func (cn *badConn) Write([]byte) (int, error) {
 	return 0, badConnError("bad connection")
 }
 
-func perform(n int, cbs ...func(int)) {
+func performAsync(n int, cbs ...func(int)) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	for _, cb := range cbs {
 		for i := 0; i < n; i++ {
@@ -203,28 +202,10 @@ func perform(n int, cbs ...func(int)) {
 			}(cb, i)
 		}
 	}
-	wg.Wait()
+	return &wg
 }
 
-func eventually(fn func() error, timeout time.Duration) (err error) {
-	done := make(chan struct{})
-	var exit int32
-	go func() {
-		for atomic.LoadInt32(&exit) == 0 {
-			err = fn()
-			if err == nil {
-				close(done)
-				return
-			}
-			time.Sleep(timeout / 100)
-		}
-	}()
-
-	select {
-	case <-done:
-		return nil
-	case <-time.After(timeout):
-		atomic.StoreInt32(&exit, 1)
-		return err
-	}
+func perform(n int, cbs ...func(int)) {
+	wg := performAsync(n, cbs...)
+	wg.Wait()
 }

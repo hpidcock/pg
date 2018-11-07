@@ -33,8 +33,28 @@ func (v URLValues) String(name string) string {
 	return values[0]
 }
 
+func (v URLValues) Bool(name string) (bool, error) {
+	if !v.Has(name) {
+		return false, nil
+	}
+	s := v.String(name)
+	if s == "" {
+		return true, nil
+	}
+	return strconv.ParseBool(s)
+}
+
+func (v URLValues) MaybeBool(name string) bool {
+	flag, _ := v.Bool(name)
+	return flag
+}
+
 func (v URLValues) Int(name string) (int, error) {
-	return strconv.Atoi(v.String(name))
+	s := v.String(name)
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(s)
 }
 
 func (v URLValues) MaybeInt(name string) int {
@@ -52,6 +72,19 @@ func (v URLValues) Int64(name string) (int64, error) {
 
 func (v URLValues) MaybeInt64(name string) int64 {
 	n, _ := v.Int64(name)
+	return n
+}
+
+func (v URLValues) Float64(name string) (float64, error) {
+	s := v.String(name)
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseFloat(s, 64)
+}
+
+func (v URLValues) MaybeFloat64(name string) float64 {
+	n, _ := v.Float64(name)
 	return n
 }
 

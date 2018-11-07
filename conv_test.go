@@ -34,13 +34,6 @@ func (m JSONMap) Value() (driver.Value, error) {
 	return string(b), nil
 }
 
-type (
-	StringSlice  []string
-	IntSlice     []int
-	Int64Slice   []int64
-	Float64Slice []float64
-)
-
 type Struct struct {
 	Foo string
 }
@@ -50,9 +43,10 @@ type conversionTest struct {
 	src, dst, wanted interface{}
 	pgtype           string
 
-	wanterr  string
-	wantnil  bool
-	wantzero bool
+	wanterr     string
+	wantnil     bool
+	wantzero    bool
+	wantnothing bool
 }
 
 func unwrap(v interface{}) interface{} {
@@ -87,13 +81,17 @@ func (test *conversionTest) String() string {
 func (test *conversionTest) Assert(t *testing.T, err error) {
 	if test.wanterr != "" {
 		if err == nil || err.Error() != test.wanterr {
-			t.Fatalf("got error %q, wanted %q (%s)", err, test.wanterr, test)
+			t.Fatalf("got error %v, wanted %q (%s)", err, test.wanterr, test)
 		}
 		return
 	}
 
 	if err != nil {
 		t.Fatalf("got error %q, wanted nil (%s)", err, test)
+	}
+
+	if test.wantnothing {
+		return
 	}
 
 	dst := reflect.Indirect(reflect.ValueOf(unwrap(test.dst))).Interface()
@@ -259,7 +257,6 @@ func conversionTests() []conversionTest {
 		{src: []int(nil), dst: new([]int), pgtype: "jsonb", wantnil: true},
 		{src: []int{}, dst: new([]int), pgtype: "jsonb", wantzero: true},
 		{src: []int{1, 2, 3}, dst: new([]int), pgtype: "jsonb"},
-		{src: IntSlice{1, 2, 3}, dst: new(IntSlice), pgtype: "jsonb"},
 
 		{src: nil, dst: pg.Array([]int(nil)), pgtype: "int[]", wanterr: "pg: Scan(nonsettable []int)"},
 		{src: pg.Array([]int(nil)), dst: pg.Array(new([]int)), pgtype: "int[]", wantnil: true},
@@ -277,6 +274,7 @@ func conversionTests() []conversionTest {
 		{src: pg.Array([]float64(nil)), dst: pg.Array(new([]float64)), pgtype: "decimal[]", wantnil: true},
 		{src: pg.Array([]float64{}), dst: pg.Array(new([]float64)), pgtype: "decimal[]"},
 		{src: pg.Array([]float64{1.1, 2.22, 3.333}), dst: pg.Array(new([]float64)), pgtype: "decimal[]"},
+		{src: pg.Array([]float64{math.NaN(), math.Inf(+1), math.Inf(-1)}), dst: pg.Array(new([]float64)), pgtype: "float[]", wantnothing: true},
 
 		{src: nil, dst: pg.Array([]string(nil)), pgtype: "text[]", wanterr: "pg: Scan(nonsettable []string)"},
 		{src: nil, dst: pg.Array(new([]string)), pgtype: "text[]", wantnil: true},
@@ -291,6 +289,8 @@ func conversionTests() []conversionTest {
 		{src: pg.Array([][]string{}), dst: pg.Array(new([][]string)), pgtype: "text[][]"},
 		{src: pg.Array([][]string{{"one", "two"}, {"three", "four"}}), dst: pg.Array(new([][]string)), pgtype: "text[][]"},
 		{src: pg.Array([][]string{{`'"\{}`}}), dst: pg.Array(new([][]string)), pgtype: "text[][]"},
+
+		{src: pg.Array([][]byte{[]byte(`'"\{}`)}), dst: pg.Array(new([][]byte)), pgtype: "bytea[]"},
 
 		{src: nil, dst: pg.Hstore(map[string]string(nil)), pgtype: "hstore", wanterr: "pg: Scan(nonsettable map[string]string)"},
 		{src: nil, dst: pg.Hstore(new(map[string]string)), pgtype: "hstore", wantnil: true},
